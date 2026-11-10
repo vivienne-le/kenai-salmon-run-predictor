@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kenai Sockeye Run Predictor</title>
+<!--__ICONS__-->
+<style>
+/*__FONTS__*/
+  :root {
+    --surface: #ebebe8; --card: #f6f6f4; --ink: #111110; --ink-2: #52514e; --muted: #6b6b67;
+    --grid: #d3d3cf; --band: #d6d6d2; --accent: #d65f6f; --accent-soft: rgba(255, 145, 164, .38);
+    --hand: "Caveat", "Comic Sans MS", cursive; --sans: "Inter", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --surface: #151514; --card: #1e1e1c; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #9a9a95;
+            --grid: #34342f; --band: #2f2f2b; --accent: #f59aa0; --accent-soft: rgba(255, 145, 164, .28); }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--ink); font: 15px/1.5 var(--sans); }
+  main { max-width: 1040px; margin: 0 auto; padding: 40px 28px 64px; }
+  .demo { display: inline-block; font-size: 12px; color: var(--ink-2); background: var(--card);
+          border-radius: 999px; padding: 2px 10px; margin-bottom: 18px; }
+  .demo[hidden] { display: none; }
+  header { display: flex; align-items: center; gap: 18px; margin-bottom: 28px; }
+  header h1 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; margin: 0; }
+  header p { margin: 2px 0 0; color: var(--ink-2); font-size: 14px; }
+  .sound { margin-left: auto; align-self: flex-start; width: 38px; height: 38px; border-radius: 50%; border: 0;
+           background: var(--card); color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
+  .sound:hover { color: var(--ink); }
+  .sound:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sound .off { display: none; }
+  .sound[aria-pressed="false"] .on { display: none; }
+  .sound[aria-pressed="false"] .off { display: inline; }
+  .mascot { width: 72px; height: 72px; flex: none; border-radius: 15px; transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
+  .mascot:hover { transform: rotate(-4deg) scale(1.06); }
+
+  section { background: var(--card); border-radius: 20px; padding: 26px 28px; margin-bottom: 18px; }
+  h2 { font: 600 13px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin: 0 0 14px; }
+  .hand { font-family: var(--hand); }
+
+  /* hand-written forecast note */
+  .note { font-family: var(--hand); font-size: 31px; line-height: 1.45; min-height: 3.2em; margin: 0; }
+  .note .seg { position: relative; white-space: pre-wrap; }
+  .note .strike, .note .hl, .note .circ { white-space: nowrap; }
+  .note .hl { background: linear-gradient(var(--accent-soft), var(--accent-soft)) no-repeat 0 60% / 0% 70%;
+              transition: background-size .5s ease; border-radius: 4px; padding: 0 2px; }
+  .note .hl.on { background-size: 100% 70%; }
+  .note .strike::after { content: ""; position: absolute; left: -2px; top: 54%; height: 2.5px; width: 0;
+                         background: var(--ink); border-radius: 2px; transform: rotate(-4deg); transition: width .35s ease; }
+  .note .strike.on::after { width: calc(100% + 4px); }
+  .note .strike { color: var(--muted); margin: 0 .12em; }
+  .note .circ { display: inline-block; padding: 0 8px; }
+  .note .circ svg { position: absolute; inset: -6px -4px -2px -6px; width: calc(100% + 10px); height: calc(100% + 8px);
+                    overflow: visible; pointer-events: none; }
+  .note .circ path { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round;
+                     stroke-dasharray: 400; stroke-dashoffset: 400; transition: stroke-dashoffset .6s ease; }
+  .note .circ.on path { stroke-dashoffset: 0; }
+  .note .cursor { display: inline-block; width: 2px; height: .9em; background: var(--ink); vertical-align: -.1em;
+                  animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0 } }
+  .sub { color: var(--ink-2); margin: 14px 0 0; font-size: 14px; }
+
+  /* controls */
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+  .pills button { font: 500 12px var(--sans); color: var(--ink-2); background: transparent; border: 1px solid var(--grid);
+                  border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+  .pills button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .pills button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  svg text { fill: var(--ink-2); font: 12px var(--sans); }
+  svg .hand-label { font: 600 25px var(--hand); }
+  .axis line { stroke: var(--grid); }
+  .draw { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw 1.8s ease-out forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0 } }
+
+  .tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--card); font: 12px/1.45 var(--sans);
+         padding: 8px 10px; border-radius: 10px; opacity: 0; transition: opacity .12s; z-index: 10; white-space: nowrap; }
+  .tip b { font-weight: 600; }
+  .tip .k { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+  .grid-wrap { position: relative; }
+  .goo-dot { transform-box: fill-box; transform-origin: center; transform: scale(0);
+             transition: transform .7s cubic-bezier(.3, 1.6, .5, 1); }
+  .goo-dot.on { transform: scale(1); }
+  .row-hover .goo-dot { transform: scale(1.18); }
+  .key { display: flex; gap: 18px; align-items: center; font-size: 12px; color: var(--ink-2); margin-top: 6px; flex-wrap: wrap; }
+  .key svg { vertical-align: middle; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .two section { margin: 0; }
+  @media (max-width: 760px) {
+    .two { grid-template-columns: 1fr; } .note { font-size: 25px; } main { padding: 24px 14px 48px; }
+    section { padding: 20px 16px; } .scroll { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
+    #curve, #grid { min-width: 760px; } header h1 { font-size: 22px; }
+  }
+  details { margin-top: 18px; }
+  summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 26px; line-height: 1.7; }
+  .person { position: relative; color: var(--ink); font-weight: 500; text-decoration: underline;
+            text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; cursor: pointer; }
+  .person:hover, .person:focus-visible { text-decoration-color: var(--ink); outline: none; }
+  .person::after { content: attr(data-role); position: absolute; left: 50%; bottom: calc(100% + 10px);
+                   transform: translate(-50%, 4px); background: var(--ink); color: var(--card); font: 500 12px/1.4 var(--sans);
+                   padding: 7px 10px; border-radius: 10px; white-space: nowrap; opacity: 0; pointer-events: none;
+                   transition: opacity .15s, transform .15s; }
+  .person::before { content: ""; position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%);
+                    border: 6px solid transparent; border-top-color: var(--ink); border-bottom: 0; opacity: 0; transition: opacity .15s; }
+  .person:hover::after, .person:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+  .person:hover::before, .person:focus-visible::before { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .draw { stroke-dashoffset: 0; } .goo-dot { transform: scale(1); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="demo" class="demo" hidden>Demo data: synthetic counts, not real ADF&amp;G numbers</div>
+
+  <header>
+    <img class="mascot" src="__MASCOT__" alt="Salmon Run Predictor icon" width="72" height="72">
+    <div>
+      <h1>Kenai Sockeye Run Predictor</h1>
+      <p id="subtitle"></p>
+    </div>
+    <button class="sound" id="sound" aria-pressed="true" aria-label="Hover sounds" title="Hover sounds on / off">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" stroke="none"/>
+        <g class="on"><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19.5 5.5a9 9 0 0 1 0 13"/></g>
+        <g class="off"><path d="M17 9l5 6M22 9l-5 6"/></g>
+      </svg>
+    </button>
+  </header>
+
+  <section aria-labelledby="h-note">
+    <h2 id="h-note">The forecast</h2>
+    <p class="note" id="note" aria-live="polite"></p>
+    <p class="sub" id="note-sub"></p>
+  </section>
+
+  <section aria-labelledby="h-curve">
+    <h2 id="h-curve">Season curve</h2>
+    <div class="pills" id="pills" role="group" aria-label="Compare with season"></div>
+    <div class="scroll"><svg id="curve" viewBox="0 0 960 380" role="img" aria-label="Daily fish counts: forecast vs a past season"></svg></div>
+  </section>
+
+  <section aria-labelledby="h-grid">
+    <h2 id="h-grid">Every season, day by day</h2>
+    <div class="grid-wrap scroll"><svg id="grid" role="img" aria-label="Dot grid of daily counts per season"></svg></div>
+    <div class="key" id="key"></div>
+  </section>
+
+  <div class="two">
+    <section aria-labelledby="h-acc">
+      <h2 id="h-acc">How close were the guesses?</h2>
+      <p class="hand" id="acc-note" style="font-size:21px;margin:-6px 0 4px"></p>
+      <svg id="acc" viewBox="0 0 460 220" role="img" aria-label="Peak-date error per back-tested season"></svg>
+    </section>
+    <section aria-labelledby="h-tot">
+      <h2 id="h-tot">Season totals</h2>
+      <p class="hand" style="font-size:21px;margin:-6px 0 4px">Fish counted per season, with the forecast in color.</p>
+      <svg id="tot" viewBox="0 0 460 220" role="img" aria-label="Total fish counted per season"></svg>
+    </section>
+  </div>
+
+  <details>
+    <summary>Show the numbers as a table</summary>
+    <table id="table"></table>
+  </details>
+
+  <footer id="footer"></footer>
+</main>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+const D = /*__DATA__*/null;
+const NS = "http://www.w3.org/2000/svg";
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, parent) => {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+};
+const days = D.forecast.map((_, i) => D.startDoy + i);
+const dayLabel = doy => new Date(2001, 0, doy).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const fmtK = v => v >= 1e6 ? (v / 1e6).toFixed(2).replace(/0$/, "") + "M" : v >= 1e3 ? Math.round(v / 1e3) + "k" : String(v);
+const fmt = v => Math.round(v).toLocaleString("en-US");
+const tip = $("tip");
+const showTip = (html, x, y) => {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const w = tip.offsetWidth;
+  tip.style.left = Math.min(x + 14, innerWidth - w - 8) + "px"; tip.style.top = (y + 14) + "px";
+};
+const hideTip = () => tip.style.opacity = 0;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// header + note
+if (D.synthetic) $("demo").hidden = false;
+$("subtitle").textContent = `${D.river} · ${D.species} · XGBoost forecast from preseason river, weather & ocean conditions`;
+
+const fcPeak = D.forecastPeakDoy;
+const fcPeakVal = Math.max(...D.forecast);
+const fcTotal = D.forecast.reduce((a, b) => a + b, 0);
+const firstTen = D.seasons.slice(0, 10);
+const oldPeak = Math.round(firstTen.reduce((a, s) => a + s.peakDoy, 0) / firstTen.length);
+const shift = oldPeak - fcPeak;
+const segs = [{ t: `The ${D.forecastYear} run should peak around ` }];
+if (Math.abs(shift) >= 1) segs.push({ t: dayLabel(oldPeak), c: "strike" }, { t: " " });
+segs.push({ t: dayLabel(fcPeak), c: "hl" });
+if (Math.abs(shift) >= 1) segs.push({ t: `, ${Math.abs(shift)} day${Math.abs(shift) === 1 ? "" : "s"} ${shift > 0 ? "earlier" : "later"} than the ${firstTen[0].year}–${firstTen[firstTen.length - 1].year} average.` });
+else segs.push({ t: ", right on its old schedule." });
+segs.push({ t: " Expect about " }, { t: fmtK(fcPeakVal), c: "circ" }, { t: " fish on the busiest day and " },
+          { t: fmtK(fcTotal), c: "circ" }, { t: " all season." });
+const act = D.actualForecastYear;
+if (act) {
+  const off = fcPeak - act.peakDoy;
+  segs.push({ t: ` The real ${act.year} run peaked on ` }, { t: dayLabel(act.peakDoy), c: "hl" },
+            { t: off === 0 ? ", right on the day." : `, ${Math.abs(off)} day${Math.abs(off) === 1 ? "" : "s"} ${off > 0 ? "before" : "after"} the forecast.` });
+}
+$("note-sub").textContent = `Back-tested on every season since ${D.seasons[0].year}: the peak date is usually within ±${D.metrics.peakDateMAE} days.` +
+  "";
+
+function writeNote() {
+  const note = $("note");
+  const cursor = document.createElement("span"); cursor.className = "cursor";
+  const spans = segs.map(s => {
+    const sp = document.createElement("span");
+    sp.className = "seg " + (s.c || "");
+    const txt = document.createElement("span"); sp.appendChild(txt);
+    if (s.c === "circ") {
+      const svg = el("svg", { viewBox: "0 0 100 40", preserveAspectRatio: "none" }, sp);
+      el("path", { d: "M8 22 C6 8 40 3 70 5 C94 7 98 20 92 30 C84 40 30 40 12 33 C4 29 6 20 18 12", "vector-effect": "non-scaling-stroke" }, svg);
+    }
+    return { sp, txt, s };
+  });
+  if (reduce) {
+    spans.forEach(({ sp, txt, s }) => { txt.textContent = s.t; sp.classList.add("on"); note.appendChild(sp); });
+    return;
+  }
+  let i = 0, j = 0;
+  note.appendChild(cursor);
+  (function tick() {
+    if (i >= spans.length) { setTimeout(() => cursor.remove(), 1200); return; }
+    const { sp, txt, s } = spans[i];
+    if (j === 0) note.insertBefore(sp, cursor);
+    txt.textContent = s.t.slice(0, ++j);
+    if (j >= s.t.length) {
+      if (s.c) requestAnimationFrame(() => sp.classList.add("on"));
+      i++; j = 0;
+      setTimeout(tick, s.c ? 380 : 40);
+    } else setTimeout(tick, 26 + Math.random() * 30);
+  })();
+}
+
+// season curve
+const seasonOpts = [...(D.actualForecastYear ? [D.actualForecastYear] : []), ...D.seasons.slice().reverse()];
+let picked = seasonOpts[0];
+
+function pathOf(vals, x, y) { return vals.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1)).join(""); }
+
+function drawCurve() {
+  const svg = $("curve"); svg.innerHTML = "";
+  const W = 960, H = 380, m = { l: 56, r: 120, t: 18, b: 34 };
+  const max = Math.max(...D.band.hi, ...D.forecast, ...picked.counts) * 1.08;
+  const x = i => m.l + i / (days.length - 1) * (W - m.l - m.r);
+  const y = v => H - m.b - v / max * (H - m.t - m.b);
+  const ax = el("g", { class: "axis" }, svg);
+  const step = Math.pow(10, Math.floor(Math.log10(max / 4)));
+  const tick = [1, 2, 2.5, 5, 10].map(k => k * step).find(t => max / t <= 5);
+  for (let v = 0; v < max; v += tick) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }, ax);
+    el("text", { x: m.l - 10, y: y(v) + 4, "text-anchor": "end" }, ax).textContent = fmtK(v);
+  }
+  days.forEach((d, i) => {
+    const dt = new Date(2001, 0, d);
+    if (dt.getDate() === 1 || dt.getDate() === 15)
+      el("text", { x: x(i), y: H - 10, "text-anchor": "middle" }, ax).textContent = dayLabel(d);
+  });
+  const band = D.band.hi.map((v, i) => `${i ? "L" : "M"}${x(i)} ${y(v)}`).join("") +
+               D.band.lo.map((v, i) => `L${x(i)} ${y(v)}`).reverse().join("") + "Z";
+  el("path", { d: band, fill: css("--band"), opacity: .8 }, svg);
+
+  const lines = [
+    { vals: picked.counts, color: css("--ink"), label: `${picked.year} actual` },
+    { vals: D.forecast, color: css("--accent"), label: `${D.forecastYear} forecast` },
+  ];
+  lines.forEach((ln, k) => {
+    const p = el("path", { d: pathOf(ln.vals, x, y), fill: "none", stroke: ln.color, "stroke-width": 2.2,
+                           "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    const len = p.getTotalLength(); p.style.setProperty("--len", len);
+    if (!reduce) { p.classList.add("draw"); p.style.animationDelay = (k * .35) + "s"; }
+    const pi = ln.vals.indexOf(Math.max(...ln.vals));
+    const lx = k ? Math.min(x(pi) + 14, W - m.r + 8) : x(pi) - 12, ly = y(ln.vals[pi]) - 8;
+    const t = el("text", { x: lx, y: ly, class: "hand-label", "text-anchor": k ? "start" : "end", style: `fill:${ln.color}` }, svg);
+    t.textContent = ln.label;
+    if (!reduce) { t.style.opacity = 0; t.style.transition = "opacity .6s"; setTimeout(() => t.style.opacity = 1, 1400 + k * 350); }
+  });
+  el("text", { x: m.l + 6, y: y(D.band.hi[Math.floor(days.length * .62)]) - 8, class: "hand-label",
+               style: `fill:${css("--muted")};font-size:20px` }, svg).textContent = "usual range";
+
+  // hover layer
+  const rule = el("line", { y1: m.t, y2: H - m.b, stroke: css("--muted"), "stroke-width": 1, opacity: 0 }, svg);
+  const dots = lines.map(ln => el("circle", { r: 5, fill: ln.color, stroke: css("--card"), "stroke-width": 2, opacity: 0 }, svg));
+  const hit = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }, svg);
+  hit.addEventListener("pointermove", e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const i = Math.max(0, Math.min(days.length - 1, Math.round((p.x - m.l) / (W - m.l - m.r) * (days.length - 1))));
+    rule.setAttribute("x1", x(i)); rule.setAttribute("x2", x(i)); rule.setAttribute("opacity", 1);
+    lines.forEach((ln, k) => { dots[k].setAttribute("cx", x(i)); dots[k].setAttribute("cy", y(ln.vals[i])); dots[k].setAttribute("opacity", 1); });
+    showTip(`<b>${dayLabel(days[i])}</b><br>` + lines.slice().reverse().map(ln =>
+      `<span class="k" style="background:${ln.color}"></span>${ln.label}: <b>${fmt(ln.vals[i])}</b>`).join("<br>") +
+      `<br><span style="opacity:.7">usual range ${fmtK(D.band.lo[i])}–${fmtK(D.band.hi[i])}</span>`, e.clientX, e.clientY);
+  });
+  hit.addEventListener("pointerleave", () => { rule.setAttribute("opacity", 0); dots.forEach(d => d.setAttribute("opacity", 0)); hideTip(); });
+}
+
+function buildPills() {
+  const wrap = $("pills");
+  seasonOpts.slice(0, 12).forEach(s => {
+    const b = document.createElement("button");
+    b.textContent = s.year; b.setAttribute("aria-pressed", s === picked);
+    b.onclick = () => { picked = s; [...wrap.children].forEach(c => c.setAttribute("aria-pressed", c === b)); drawCurve(); };
+    wrap.appendChild(b);
+  });
+}
+
+// dot grid (gooey)
+function drawGrid() {
+  const svg = $("grid");
+  const rows = [...D.seasons.map(s => ({ ...s, kind: "hist" })),
+                { year: D.forecastYear, counts: D.forecast, peakDoy: fcPeak, kind: "fc" }];
+  const n = days.length, cs = 14.2, rs = 22, ml = 52, mt = 30;
+  const W = ml + n * cs + 10, H = mt + rows.length * rs + 10;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const max = Math.max(...rows.flatMap(r => r.counts));
+  const R = v => 1.6 + Math.pow(v / max, .7) * 6.4;
+  const defs = el("defs", {}, svg);
+  const f = el("filter", { id: "goo", x: "-10%", y: "-10%", width: "120%", height: "120%" }, defs);
+  el("feGaussianBlur", { in: "SourceGraphic", stdDeviation: 2.4, result: "b" }, f);
+  el("feColorMatrix", { in: "b", values: "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8" }, f);
+
+  days.forEach((d, i) => {
+    const dt = new Date(2001, 0, d);
+    if (dt.getDate() === 1 || dt.getDate() === 15)
+      el("text", { x: ml + i * cs + cs / 2, y: 14, "text-anchor": "middle" }, svg).textContent = dayLabel(d);
+  });
+  const peaksPts = [];
+  rows.forEach((r, ri) => {
+    const cy = mt + ri * rs + rs / 2;
+    const isFc = r.kind === "fc";
+    const lbl = el("text", { x: ml - 12, y: cy + 4, "text-anchor": "end",
+                             style: isFc ? `fill:${css("--accent")};font-weight:600` : "" }, svg);
+    lbl.textContent = isFc ? `${r.year}*` : r.year;
+    const g = el("g", { filter: "url(#goo)", fill: isFc ? css("--accent") : css("--ink") }, svg);
+    r.counts.forEach((v, i) => {
+      const c = el("circle", { cx: ml + i * cs + cs / 2, cy, r: R(v), class: "goo-dot" }, g);
+      setTimeout(() => c.classList.add("on"), reduce ? 0 : 300 + i * 18 + ri * 22);
+    });
+    const pi = r.peakDoy - D.startDoy, px = ml + pi * cs + cs / 2;
+    peaksPts.push([ri, pi]);
+    const xg = el("g", { stroke: css("--card"), "stroke-width": 2.2, "stroke-linecap": "round" }, svg);
+    el("line", { x1: px - 3.6, y1: cy - 3.6, x2: px + 3.6, y2: cy + 3.6 }, xg);
+    el("line", { x1: px + 3.6, y1: cy - 3.6, x2: px - 3.6, y2: cy + 3.6 }, xg);
+    r._g = g; r._cy = cy;
+  });
+  // trend through historical peaks
+  const hp = peaksPts.slice(0, -1), N = hp.length;
+  const mx = hp.reduce((a, p) => a + p[0], 0) / N, my = hp.reduce((a, p) => a + p[1], 0) / N;
+  const slope = hp.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / hp.reduce((a, p) => a + (p[0] - mx) ** 2, 0);
+  const at = ri => ml + (my + slope * (ri - mx)) * cs + cs / 2;
+  el("line", { x1: at(0), y1: mt + rs / 2, x2: at(N - 1), y2: mt + (N - 1) * rs + rs / 2,
+               stroke: css("--muted"), "stroke-width": 1.4, "stroke-dasharray": "4 5" }, svg);
+  const perDecade = (slope * 10).toFixed(1);
+  const trendTxt = slope < 0 ? `peak drifting ${Math.abs(perDecade)} days earlier per decade` : `peak shifting ${perDecade} days later per decade`;
+
+  svg.addEventListener("pointermove", e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const ri = Math.floor((p.y - mt) / rs), i = Math.floor((p.x - ml) / cs);
+    rows.forEach((r, k) => r._g.classList.toggle("row-hover", k === ri));
+    if (ri < 0 || ri >= rows.length || i < 0 || i >= n) return hideTip();
+    const r = rows[ri];
+    showTip(`<b>${dayLabel(days[i])}, ${r.year}</b>${r.kind === "fc" ? " (forecast)" : ""}<br>${fmt(r.counts[i])} fish` +
+            `<br><span style="opacity:.7">season peak ${dayLabel(r.peakDoy)}</span>`, e.clientX, e.clientY);
+  });
+  svg.addEventListener("pointerleave", () => { rows.forEach(r => r._g.classList.remove("row-hover")); hideTip(); });
+
+  const key = $("key");
+  const ks = [Math.round(max * .05), Math.round(max * .3), max];
+  key.innerHTML = `<span>Dot size = fish counted that day</span>` + ks.map(v =>
+    `<span><svg width="24" height="24"><circle cx="12" cy="12" r="${R(v)}" fill="${css("--ink")}"/></svg> ${fmtK(v)}</span>`).join("") +
+    `<span><svg width="24" height="24"><circle cx="12" cy="12" r="9" fill="${css("--ink")}"/><g stroke="${css("--card")}" stroke-width="2.2" stroke-linecap="round"><line x1="8.4" y1="8.4" x2="15.6" y2="15.6"/><line x1="15.6" y1="8.4" x2="8.4" y2="15.6"/></g></svg> season peak</span>` +
+    `<span><svg width="26" height="10"><line x1="1" y1="5" x2="25" y2="5" stroke="${css("--muted")}" stroke-width="1.4" stroke-dasharray="4 5"/></svg> <span class="hand" style="font-size:19px;color:var(--ink)">${trendTxt}</span></span>` +
+    `<span style="color:${css("--accent")}">${D.forecastYear}* = forecast</span>`;
+}
+
+// accuracy (X marks)
+function drawAcc() {
+  const svg = $("acc"), W = 460, H = 220, m = { l: 34, r: 20, t: 20, b: 30 };
+  const lim = Math.max(4, ...D.cv.map(c => Math.abs(c.err)));
+  const x = i => m.l + i / (D.cv.length - 1) * (W - m.l - m.r);
+  const y = e => m.t + (lim - e) / (2 * lim) * (H - m.t - m.b);
+  const ax = el("g", { class: "axis" }, svg);
+  [-lim, 0, lim].forEach(v => {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), "stroke-dasharray": v ? "2 4" : "" }, ax);
+    el("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, ax).textContent = (v > 0 ? "+" : "") + v + "d";
+  });
+  D.cv.forEach((c, i) => {
+    if (i % 5 === 0) el("text", { x: x(i), y: H - 8, "text-anchor": "middle" }, ax).textContent = c.year;
+    const g = el("g", { stroke: css("--ink"), "stroke-width": 3, "stroke-linecap": "round" }, svg);
+    const cx = x(i), cy = y(c.err), s = 4.5;
+    el("line", { x1: cx - s, y1: cy - s, x2: cx + s, y2: cy + s }, g);
+    el("line", { x1: cx + s, y1: cy - s, x2: cx - s, y2: cy + s }, g);
+    const hit = el("rect", { x: cx - 9, y: m.t, width: 18, height: H - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", e => showTip(`<b>${c.year}</b><br>predicted peak ${c.err === 0 ? "exactly right" :
+      Math.abs(c.err) + " day" + (Math.abs(c.err) === 1 ? "" : "s") + (c.err > 0 ? " late" : " early")}`, e.clientX, e.clientY));
+    hit.addEventListener("pointerleave", hideTip);
+  });
+  $("acc-note").textContent = `Predicted peak minus real peak. Usually within ±${D.metrics.peakDateMAE} days.`;
+}
+
+// totals
+function drawTot() {
+  const svg = $("tot"), W = 460, H = 220, m = { l: 40, r: 12, t: 20, b: 30 };
+  const rows = [...D.seasons.map(s => ({ year: s.year, v: s.total })), { year: D.forecastYear, v: fcTotal, fc: true }];
+  const max = Math.max(...rows.map(r => r.v)) * 1.1;
+  const bw = (W - m.l - m.r) / rows.length;
+  const y = v => H - m.b - v / max * (H - m.t - m.b);
+  const ax = el("g", { class: "axis" }, svg);
+  const step = max > 3e6 ? 1e6 : 5e5;
+  for (let v = 0; v < max; v += step) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }, ax);
+    el("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, ax).textContent = fmtK(v);
+  }
+  rows.forEach((r, i) => {
+    const bx = m.l + i * bw + 1, h = H - m.b - y(r.v), w = Math.max(bw - 2, 2), rr = Math.min(4, w / 2);
+    el("path", { d: `M${bx} ${H - m.b}V${y(r.v) + rr}q0 -${rr} ${rr} -${rr}h${w - 2 * rr}q${rr} 0 ${rr} ${rr}V${H - m.b}Z`,
+                 fill: r.fc ? css("--accent") : css("--ink") }, svg);
+    if (i % 5 === 0) el("text", { x: bx + w / 2, y: H - 8, "text-anchor": "middle" }, ax).textContent = r.year;
+    const hit = el("rect", { x: bx - 1, y: m.t, width: bw, height: H - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", e => showTip(`<b>${r.year}</b>${r.fc ? " (forecast)" : ""}<br>${fmt(r.v)} fish`, e.clientX, e.clientY));
+    hit.addEventListener("pointerleave", hideTip);
+  });
+  
+}
+
+// table + footer
+function buildTable() {
+  const t = $("table");
+  t.innerHTML = `<tr><th>Date</th><th>${D.forecastYear} forecast</th><th>Usual low</th><th>Usual high</th>` +
+    D.seasons.slice(-3).map(s => `<th>${s.year}</th>`).join("") + `</tr>` +
+    days.map((d, i) => `<tr><td>${dayLabel(d)}</td><td>${fmt(D.forecast[i])}</td><td>${fmt(D.band.lo[i])}</td><td>${fmt(D.band.hi[i])}</td>` +
+      D.seasons.slice(-3).map(s => `<td>${fmt(s.counts[i])}</td>`).join("") + `</tr>`).join("");
+  $("footer").innerHTML = `Data: Alaska Department of Fish and Game sonar counts · USGS NWIS · Open-Meteo · NOAA OISST.<br>` +
+    `Model: XGBoost, leave-one-year-out back-test. Built by ` +
+    D.team.map(p => p.linkedin
+      ? `<a class="person" href="${p.linkedin}" target="_blank" rel="noopener" data-role="${p.role}" aria-label="${p.name} on LinkedIn: ${p.role}">${p.name}</a>`
+      : `<span class="person" tabindex="0" data-role="${p.role}" aria-label="${p.name}: ${p.role}">${p.name}</span>`).join(" and ") + ".";
+}
+
+// hover splash sound
+// Synthesised with Web Audio. Browsers only allow audio after a first click/tap/keypress.
+function splash(ctx, t0 = ctx.currentTime, vol = 1) {
+  const out = ctx.createGain(); out.gain.value = 0.2 * vol; out.connect(ctx.destination);
+  const r = (a, b) => a + Math.random() * (b - a);
+  // 1. the "plip": a small water drop, a sine sliding quickly downwards
+  const o = ctx.createOscillator(), og = ctx.createGain();
+  o.type = "sine"; o.frequency.setValueAtTime(r(460, 580), t0);
+  o.frequency.exponentialRampToValueAtTime(r(150, 190), t0 + 0.11);
+  og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.55, t0 + 0.008);
+  og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.17);
+  o.connect(og).connect(out); o.start(t0); o.stop(t0 + 0.19);
+  // 2. the splash: filtered noise with a falling band-pass
+  const len = Math.floor(ctx.sampleRate * 0.32), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+  const n = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ng = ctx.createGain();
+  n.buffer = buf; bp.type = "bandpass"; bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(r(1300, 1600), t0 + 0.02); bp.frequency.exponentialRampToValueAtTime(380, t0 + 0.3);
+  ng.gain.setValueAtTime(0.0001, t0 + 0.015); ng.gain.exponentialRampToValueAtTime(0.32, t0 + 0.03);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+  n.connect(bp).connect(ng).connect(out); n.start(t0 + 0.015);
+  // 3. a few droplets landing afterwards
+  for (let k = 0; k < 3; k++) {
+    const t = t0 + r(0.07, 0.24), p = ctx.createOscillator(), pg = ctx.createGain();
+    p.type = "sine"; p.frequency.setValueAtTime(r(700, 1150), t); p.frequency.exponentialRampToValueAtTime(r(1250, 1600), t + 0.03);
+    pg.gain.setValueAtTime(0.0001, t); pg.gain.exponentialRampToValueAtTime(r(0.05, 0.12), t + 0.004);
+    pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    p.connect(pg).connect(out); p.start(t); p.stop(t + 0.06);
+  }
+}
+
+const SPLASH_ON = ".mascot, .note .hl, .note .circ, .pills button, .person, #sound";
+let audio = null, soundOn = true, lastSplash = 0;
+try { soundOn = localStorage.getItem("salmon-sound") !== "off"; } catch (e) {}
+$("sound").setAttribute("aria-pressed", soundOn);
+const unlock = () => {
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === "suspended") audio.resume(); } catch (e) {}
+};
+addEventListener("pointerdown", unlock, { capture: true });
+addEventListener("keydown", unlock, { capture: true });
+document.addEventListener("pointerover", e => {
+  const t = e.target.closest && e.target.closest(SPLASH_ON);
+  if (!t || t.contains(e.relatedTarget) || !soundOn || !audio || audio.state !== "running") return;
+  const now = performance.now();
+  if (now - lastSplash < 180) return;  // throttle when sweeping across several targets
+  lastSplash = now; splash(audio);
+});
+$("sound").addEventListener("click", () => {
+  soundOn = !soundOn; $("sound").setAttribute("aria-pressed", soundOn);
+  try { localStorage.setItem("salmon-sound", soundOn ? "on" : "off"); } catch (e) {}
+  if (soundOn) { unlock(); setTimeout(() => audio && splash(audio, audio.currentTime, .8), 30); }
+});
+window.__splash = splash;
+
+writeNote(); buildPills(); drawCurve(); drawGrid(); drawAcc(); drawTot(); buildTable();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => location.reload());
+</script>
+</body>
+</html>
